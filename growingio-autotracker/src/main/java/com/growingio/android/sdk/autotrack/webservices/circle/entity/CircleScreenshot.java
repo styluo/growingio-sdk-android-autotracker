@@ -44,7 +44,9 @@ import org.json.JSONObject;
 
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.LinkedList;
 import java.util.List;
+import java.util.Queue;
 import java.util.concurrent.atomic.AtomicInteger;
 
 public class CircleScreenshot {
@@ -164,32 +166,30 @@ public class CircleScreenshot {
             }
         }
 
-        private ViewElement.Builder createViewElementBuilder(View view) {
+        private ViewElement.Builder createViewElementBuilder(ViewNode viewNode) {
             ViewElement.Builder builder = new ViewElement.Builder();
-            ViewNode viewNode = ViewHelper.getViewNode(view);
             int[] location = new int[2];
-            view.getLocationOnScreen(location);
+            viewNode.view.getLocationOnScreen(location);
 
-            // TODO: 2020/7/23 需要优化，page属性应该归入ViewNode，同时ViewNode内部属性稀烂
             return builder.setLeft(location[0])
                     .setTop(location[1])
-                    .setHeight(view.getHeight())
-                    .setWidth(view.getWidth())
-                    .setContent("xxx")
+                    .setHeight(viewNode.view.getHeight())
+                    .setWidth(viewNode.view.getWidth())
+                    .setContent(viewNode.viewContent)
                     .setContainer(true)
                     .setNodeType("xxxx")
-                    .setPage(PageProvider.get().findPage(view).path())
-                    .setParentXPath(viewNode.parentXPath.toStringValue())
+                    .setPage(PageProvider.get().findPage(viewNode.view).path())
+                    .setParentXPath(viewNode.clickableParentXPath.toStringValue())
                     .setXpath(viewNode.parentXPath.toStringValue())
                     .setZLevel(mViewCount++);
         }
 
-        private void getWebViewDomTree(final SuperWebView<?> webView) {
+        private void getWebViewDomTree(final SuperWebView<?> webView, final ViewNode viewNode) {
             mWebViewCount.incrementAndGet();
             HybridBridgeProvider.get().getWebViewDomTree(webView, new Callback<JSONObject>() {
                 @Override
                 public void onSuccess(JSONObject result) {
-                    ViewElement.Builder elementBuilder = createViewElementBuilder(webView.getRealWebView());
+                    ViewElement.Builder elementBuilder = createViewElementBuilder(viewNode);
                     mViewElements.add(elementBuilder.setWebView(result).build());
                     if (mWebViewCount.decrementAndGet() == 0) {
                         callResultOnSuccess();
@@ -204,33 +204,47 @@ public class CircleScreenshot {
         }
 
         private void checkView2ViewElement(View view) {
-            if (view instanceof WebView) {
-                getWebViewDomTree(SuperWebView.make((WebView) view));
+            ViewNode topViewNode = ViewHelper.getTopViewNode(view, null);
+            if (disposeWebView(topViewNode) && ViewUtil.canCircle(view)) {
                 return;
             }
 
-            if (ClassExistHelper.instanceOfX5WebView(view)) {
-                getWebViewDomTree(SuperWebView.make((com.tencent.smtt.sdk.WebView) view));
-                return;
-            }
-
-            if (ClassExistHelper.instanceOfUcWebView(view)) {
-                getWebViewDomTree(SuperWebView.make((com.uc.webview.export.WebView) view));
-                return;
-            }
-
-            if (ViewUtil.canCircle(view)) {
-                mViewElements.add(createViewElementBuilder(view).build());
-            }
-
-            if (view instanceof ViewGroup) {
-                ViewGroup viewGroup = (ViewGroup) view;
-                if (viewGroup.getChildCount() > 0) {
-                    for (int i = 0; i < viewGroup.getChildCount(); i++) {
-                        checkView2ViewElement(viewGroup.getChildAt(i));
+            Queue<ViewNode> queue = new LinkedList<>();
+            queue.add(topViewNode);
+            while (!queue.isEmpty()) {
+                ViewNode viewNode = queue.poll();
+                if (!disposeWebView(viewNode) && ViewUtil.canCircle(viewNode.view)) {
+                    mViewElements.add(createViewElementBuilder(viewNode).build());
+                }
+                if (viewNode.view instanceof ViewGroup) {
+                    ViewGroup viewGroup = (ViewGroup) viewNode.view;
+                    if (viewGroup.getChildCount() > 0) {
+                        for (int index = 0; index < viewGroup.getChildCount(); index++) {
+                            ViewNode childViewNode = viewNode.appendNode(viewGroup.getChildAt(index), index);
+                            queue.add(childViewNode);
+                        }
                     }
                 }
             }
+        }
+
+        private boolean disposeWebView(ViewNode viewNode) {
+            if (viewNode.view instanceof WebView) {
+                getWebViewDomTree(SuperWebView.make((WebView) viewNode.view), viewNode);
+                return true;
+            }
+
+            if (ClassExistHelper.instanceOfX5WebView(viewNode.view)) {
+                getWebViewDomTree(SuperWebView.make((com.tencent.smtt.sdk.WebView) viewNode.view), viewNode);
+                return true;
+            }
+
+            if (ClassExistHelper.instanceOfUcWebView(viewNode.view)) {
+                getWebViewDomTree(SuperWebView.make((com.uc.webview.export.WebView) viewNode.view), viewNode);
+                return true;
+            }
+
+            return false;
         }
 
         private void checkView2PageElement(View view) {

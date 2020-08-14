@@ -18,15 +18,12 @@ package com.growingio.android.sdk.autotrack.util;
 
 import android.app.Activity;
 import android.graphics.Rect;
-import android.support.v4.view.ViewPager;
 import android.text.TextUtils;
 import android.view.MenuItem;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.ViewParent;
-import android.widget.AdapterView;
 import android.widget.EditText;
-import android.widget.ExpandableListView;
 
 import androidx.recyclerview.widget.RecyclerView;
 
@@ -180,8 +177,11 @@ public class ViewHelper {
         return event;
     }
 
-    public static ViewNode getViewNode(View view) {
-        ArrayList<View> viewTreeList = new ArrayList<View>(8);
+    public static ViewNode getTopViewNode(View view, List<View> viewTreeList) {
+        if (viewTreeList == null) {
+            viewTreeList = new ArrayList<View>(8);
+        }
+
         ViewParent parent = view.getParent();
         viewTreeList.add(view);
         /*
@@ -214,11 +214,6 @@ public class ViewHelper {
         View rootView = viewTreeList.get(endIndex);
         WindowHelper.init();
 
-        String bannerText = null;
-
-        int viewPosition = 0;
-        int listPos = -1;
-        boolean mHasListParent = false;
         boolean mParentIdSettled = false;
         String prefix = WindowHelper.getWindowPrefix(rootView);
         String opx = prefix;
@@ -239,119 +234,31 @@ public class ViewHelper {
             opx = "/" + ViewAttributeUtil.getCustomId(rootView);
             px = opx;
         }
-        if (rootView instanceof ViewGroup) {
-            ViewGroup parentView = (ViewGroup) rootView;
-            for (int i = endIndex - 1; i >= 0; i--) {
-                viewPosition = 0;
-                View childView = viewTreeList.get(i);
-                String viewName = ViewAttributeUtil.getViewNameKey(childView);
-                if (viewName != null) {
-                    opx += "/" + viewName;
-                    px += "/" + viewName;
-                } else {
-                    viewName = Util.getSimpleClassName(childView.getClass());
-                    viewPosition = parentView.indexOfChild(childView);
-                    if (ClassExistHelper.instanceOfAndroidXViewPager(parentView)) {
-                        viewPosition = ((androidx.viewpager.widget.ViewPager) parentView).getCurrentItem();
-                        mHasListParent = true;
-                    } else if (ClassExistHelper.instanceOfSupportViewPager(parentView)) {
-                        viewPosition = ((ViewPager) parentView).getCurrentItem();
-                        mHasListParent = true;
-                    } else if (parentView instanceof AdapterView) {
-                        AdapterView listView = (AdapterView) parentView;
-                        viewPosition = listView.getFirstVisiblePosition() + viewPosition;
-                        mHasListParent = true;
-                    } else if (ClassExistHelper.instanceOfRecyclerView(parentView)) {
-                        int adapterPosition = getChildAdapterPositionInRecyclerView(childView, parentView);
-                        if (adapterPosition >= 0) {
-                            mHasListParent = true;
-                            viewPosition = adapterPosition;
-                        }
-                    }
-                    if (parentView instanceof ExpandableListView) {
-                        ExpandableListView listParent = (ExpandableListView) parentView;
-                        long elp = listParent.getExpandableListPosition(viewPosition);
-                        if (ExpandableListView.getPackedPositionType(elp) == ExpandableListView.PACKED_POSITION_TYPE_NULL) {
-                            if (viewPosition < listParent.getHeaderViewsCount()) {
-                                opx = opx + "/ELH[" + viewPosition + "]/" + viewName + "[0]";
-                                px = px + "/ELH[" + viewPosition + "]/" + viewName + "[0]";
-                            } else {
-                                int footerIndex = viewPosition - (listParent.getCount() - listParent.getFooterViewsCount());
-                                opx = opx + "/ELF[" + footerIndex + "]/" + viewName + "[0]";
-                                px = px + "/ELF[" + footerIndex + "]/" + viewName + "[0]";
-                            }
-                        } else {
-                            int groupIdx = ExpandableListView.getPackedPositionGroup(elp);
-                            int childIdx = ExpandableListView.getPackedPositionChild(elp);
-                            if (childIdx != -1) {
-                                listPos = childIdx;
-                                px = opx + "/ELVG[" + groupIdx + "]/ELVC[-]/" + viewName + "[0]";
-                                opx = opx + "/ELVG[" + groupIdx + "]/ELVC[" + childIdx + "]/" + viewName + "[0]";
-                            } else {
-                                listPos = groupIdx;
-                                px = opx + "/ELVG[-]/" + viewName + "[0]";
-                                opx = opx + "/ELVG[" + groupIdx + "]/" + viewName + "[0]";
-                            }
-                        }
-                    } else if (Util.isListView(parentView) || ClassExistHelper.instanceOfRecyclerView(parentView)) {
-                        // 处理有特殊的position的元素
-                        List bannerTag = ViewAttributeUtil.getBannerKey(parentView);
-                        if (bannerTag != null && (bannerTag).size() > 0) {
-                            viewPosition = Util.calcBannerItemPosition(bannerTag, viewPosition);
-                            bannerText = Util.truncateViewContent(String.valueOf(bannerTag.get(viewPosition)));
-                        }
-                        listPos = viewPosition;
-                        px = opx + "/" + viewName + "[-]";
-                        opx = opx + "/" + viewName + "[" + listPos + "]";
-                    } else if (ClassExistHelper.instanceofAndroidXSwipeRefreshLayout(parentView)
-                            || ClassExistHelper.instanceOfSupportSwipeRefreshLayout(parentView)) {
-                        opx = opx + "/" + viewName + "[0]";
-                        px = px + "/" + viewName + "[0]";
-                    } else {
-                        int matchTypePostion = 0;
-                        String matchType = childView.getClass().getSimpleName();
-                        boolean findChildView = false;
-                        for (int siblingIndex = 0; siblingIndex < parentView.getChildCount(); siblingIndex++) {
-                            View siblingView = parentView.getChildAt(siblingIndex);
-                            if (siblingView == childView) {
-                                findChildView = true;
-                                break;
-                            } else if (siblingView.getClass().getSimpleName().equals(matchType)) {
-                                matchTypePostion++;
-                            }
-                        }
-                        if (findChildView) {
-                            opx = opx + "/" + viewName + "[" + matchTypePostion + "]";
-                            px = px + "/" + viewName + "[" + matchTypePostion + "]";
-                        } else {
-                            opx = opx + "/" + viewName + "[" + viewPosition + "]";
-                            px = px + "/" + viewName + "[" + viewPosition + "]";
-                        }
-                    }
-                    String id = Util.getIdName(childView, mParentIdSettled);
-                    if (id != null) {
-                        if (ViewAttributeUtil.getViewId(childView) != null) {
-                            mParentIdSettled = true;
-                        }
-                        opx += "#" + id;
-                        px += "#" + id;
-                    }
-                }
 
-                if (childView instanceof ViewGroup) {
-                    parentView = (ViewGroup) childView;
-                } else {
-                    break;
-                }
-            }
+        return ViewNode.ViewNodeBuilder.newViewNode()
+                .setView(rootView)
+                .setLastListPos(-1)
+                .setHasListParent(false)
+                .setFullScreen(prefix.equals(WindowHelper.getMainWindowPrefix()))
+                .setInClickableGroup(false)
+                .setParentIdSettled(mParentIdSettled)
+                .setOriginalParentXpath(LinkedString.fromString(opx))
+                .setParentXPath(LinkedString.fromString(px))
+                .setWindowPrefix(prefix)
+                .setViewContent(Util.getViewContent(view, null))
+                .setClickableParentXPath(LinkedString.fromString(px))
+                .build();
+    }
+
+    public static ViewNode getViewNode(View view) {
+        ArrayList<View> viewTreeList = new ArrayList<View>(8);
+
+        ViewNode viewNode = getTopViewNode(view, viewTreeList);
+        int endIndex = viewTreeList.size() - 1;
+
+        for (int i = endIndex - 1; i >= 0; i--) {
+            viewNode = viewNode.appendNode(viewTreeList.get(i));
         }
-
-        ViewNode viewNode = new ViewNode(view, listPos, mHasListParent, prefix.equals(WindowHelper.getMainWindowPrefix()), true, mParentIdSettled,
-                LinkedString.fromString(opx),
-                LinkedString.fromString(px), prefix);
-        viewNode.viewContent = Util.getViewContent(view, bannerText);
-        viewNode.clickableParentXPath = LinkedString.fromString(px);
-        viewNode.bannerText = bannerText;
 
         return viewNode;
     }

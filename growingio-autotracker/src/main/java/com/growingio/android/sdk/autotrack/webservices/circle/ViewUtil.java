@@ -24,7 +24,8 @@ public class ViewUtil {
     }
 
     public static boolean canCircle(View view) {
-        return view instanceof WebView
-                || (view.isClickable() && view.hasOnClickListeners());
+        // 单纯判断hasOnClickListeners不能覆盖多数场景
+        return view instanceof WebView || view.isClickable();
+//                || (view.isClickable() && view.hasOnClickListeners());
     }
 }
